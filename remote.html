@@ -182,8 +182,8 @@ button{font:inherit;color:inherit;border:0;cursor:pointer;touch-action:manipulat
       <button class="tool" id="ytbtn" aria-expanded="false">
         <svg viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="4.5"/><path d="M10 9l5 3-5 3z"/></svg>YOUTUBE
       </button>
-      <button class="tool" id="spare1" disabled>
-        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>SOON
+      <button class="tool on" id="qrbtn" title="Show / hide the QR code on the TV screen">
+        <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3h-3zM20 14v.01M14 20v.01M17 20h4v-3"/></svg><span id="qrtxt">HIDE QR</span>
       </button>
       <button class="tool" id="spare2" disabled>
         <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>SOON
@@ -280,6 +280,8 @@ function draw(){
   $("recbtn").classList.toggle("on",!!st.rec_on);
   $("recbtn").textContent=st.rec_on?("\u25A0 "+(rs>=3600?Math.floor(rs/3600)+":":"")+pad(Math.floor(rs%3600/60))+":"+pad(rs%60)):"\u25CF REC";
   $("pwrbtn").classList.toggle("armed",st.power_state==="armed"||st.power_state==="pending");
+  $("qrbtn").classList.toggle("on",st.qr!==false);
+  $("qrtxt").textContent=st.qr===false?"SHOW QR":"HIDE QR";
   $("tvbtn").classList.toggle("on",!!st.tv);
   $("tvbtn").textContent=st.tv?"CLOSE TV":"OPEN TV";
   const ytOpening=!st.yt&&Date.now()-ytAt<12000;
@@ -329,6 +331,7 @@ $("pad").addEventListener("click",e=>{
 $("pwrbtn").onclick=async()=>{buzz();const was=st.power_state==="pending";await post("power");if(was&&st.power_state!=="pending")say("Shutdown cancelled")};
 $("recbtn").onclick=()=>{buzz();post("rec");say(st.rec_on?"Stopping recording...":"Starting recording...")};
 $("tvbtn").onclick=()=>{buzz();const was=!!st.tv;post("tv");say(was?"Closing TV screen...":"Opening TV screen...")};
+$("qrbtn").onclick=()=>{buzz();const hide=st.qr!==false;post("qr",hide?"hide":"show");say(hide?"QR code hidden on TV":"QR code shown on TV")};
 $("okbtn").onclick=()=>{buzz();if(buf)commit()};
 $("listbtn").onclick=()=>{buzz();$("guide").scrollIntoView({behavior:"smooth"})};
 
