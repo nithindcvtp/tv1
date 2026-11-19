@@ -9,6 +9,12 @@ window.S1_CONFIG = { HOME_NAME: '' };
 
 /* Shared by tv (index.html) and remote (remote.html): works out the "room" both sides meet in. */
 window.S1_ROOM = function () {
+  /* Opened from the TV's QR code (remote.html?r=...): use exactly that room, no guessing from the internet address. */
+  try {
+    var r = new URLSearchParams(location.search).get('r');
+    r = String(r || '').toLowerCase().replace(/[^a-z0-9-]/g, '');
+    if (r) return Promise.resolve('s1iptv-' + r);
+  } catch (e) {}
   var name = String((window.S1_CONFIG && S1_CONFIG.HOME_NAME) || '').toLowerCase().replace(/[^a-z0-9-]/g, '');
   if (name) return Promise.resolve('s1iptv-n-' + name);
   var ip = Promise.race([
