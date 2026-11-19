@@ -10,10 +10,16 @@
                 (for example a free account at metered.ca / a Twilio / Cloudflare TURN), fill it in like:
                   TURN: { urls: ['turn:your.server:3478', 'turns:your.server:443?transport=tcp'], username: '...', credential: '...' }
 
+   PIN        - the TV has a PIN and a phone must know it to control the TV. Leave it '' and the TV makes
+                a random 6-digit PIN once (shown under the QR code on the TV). Scanning the QR code fills the
+                PIN in by itself; a phone that opens the remote page directly is asked for it once and remembers it.
+                To choose your own, e.g. PIN: '482913' (4-8 digits; this file is public on GitHub, so prefer
+                leaving it empty). PIN: 'off' removes the PIN completely.
+
    The phone and the TV always try the fastest route first (same Wi-Fi, direct) and switch to the
    internet relay by themselves when that is not possible. Nothing to choose, nothing shown.
 */
-window.S1_CONFIG = { HOME_NAME: '', TURN: null };
+window.S1_CONFIG = { HOME_NAME: '', TURN: null, PIN: '' };
 
 (function () {
   function store(k, v) { try { if (v === undefined) return localStorage.getItem(k); if (v === null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (e) {} return null; }
@@ -56,10 +62,11 @@ window.S1_CONFIG = { HOME_NAME: '', TURN: null };
   window.S1_ROOM = function () { var h = homeRoom(); return h ? Promise.resolve(h) : ipRoom(); };
 
   /* Phone remote: rooms to try, best first. The first that has a TV in it wins.
-       1. the room in the TV's QR link (remote.html?r=...)  - works from anywhere
+       1. the room in the TV's QR link (remote.html?r=...)  - only when the TV has no PIN
        2. the home name from this file
-       3. the TV the phone remembers from the last QR scan   - works from anywhere
-       4. the Wi-Fi's public address                          - same-Wi-Fi auto find, no scan needed (also remembered)
+       3. the TV's PIN (from the QR code, or typed)           - works from anywhere
+       4. the TV the phone remembers from before
+       5. the Wi-Fi's public address                          - same-Wi-Fi auto find (also remembered)
      keep = remember this room after it connects. */
   window.S1_ROOM_CANDIDATES = function () {
     var list = [], seen = {};
@@ -67,6 +74,9 @@ window.S1_CONFIG = { HOME_NAME: '', TURN: null };
     var q = ''; try { q = clean(new URLSearchParams(location.search).get('r')); } catch (e) {}
     if (q) add(function () { return Promise.resolve('s1iptv-' + q); }, true, q);
     var h = homeRoom(); if (h) add(function () { return Promise.resolve(h); }, false, h);
+    /* the TV's PIN is also its address: finds the TV from anywhere, even when its internet address changed */
+    var pin = String(store('s1_pin') || '').replace(/\D/g, '');
+    if (pin) add(function () { return Promise.resolve('s1iptv-pin-' + pin); }, false, 'pin' + pin);
     var saved = clean(store('s1_room')); if (saved) add(function () { return Promise.resolve('s1iptv-' + saved); }, true, saved);
     add(ipRoom, true, '');
     return list;

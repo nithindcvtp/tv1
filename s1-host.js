@@ -113,8 +113,38 @@
     return realFetch(input, init);
   };
 
-  /* ---------- link to the phone remote (no QR / code: both pages meet in the same "room") ---------- */
-  var peer = null, conns = [], status = 'Starting...', box = null, retryT = 0;
+  /* ---------- PIN: the phone must know it. It is inside the QR code (so scanning fills it in by itself)
+     or typed on the phone by hand. It also doubles as a second, always-the-same "address" for this TV,
+     so a phone anywhere on the internet can find the TV with just the PIN. ---------- */
+  var pin = '', fixedPin = false;
+  function newPin() {
+    var n = 0;
+    try { var a = new Uint32Array(1); crypto.getRandomValues(a); n = a[0] % 1000000; } catch (e) { n = Math.floor(Math.random() * 1000000); }
+    var p = ('000000' + n).slice(-6); store('s1_pin', p); return p;
+  }
+  (function () {
+    var cfg = String((window.S1_CONFIG && S1_CONFIG.PIN) || '').trim().toLowerCase();
+    if (cfg === 'off') return;                                   /* PIN switched off in config.js */
+    if (/^\d{4,8}$/.test(cfg)) { pin = cfg; fixedPin = true; return; }   /* fixed PIN from config.js */
+    var saved = store('s1_pin');
+    pin = /^\d{6}$/.test(saved || '') ? saved : newPin();        /* otherwise: a random PIN made once, kept in this browser */
+  })();
+  function pinText() { return pin.length === 6 ? pin.slice(0, 3) + ' ' + pin.slice(3) : pin; }
+
+  var badTries = 0, lockUntil = 0;
+  function checkPin(given) {                       /* -> 'ok' | 'need' (none given) | 'bad' | 'locked' */
+    if (!pin) return 'ok';
+    var now = Date.now();
+    if (now < lockUntil) return 'locked';
+    if (!given) return 'need';
+    if (given === pin) { badTries = 0; return 'ok'; }
+    if (++badTries >= 5) { lockUntil = now + 60000; badTries = 0; }   /* 5 wrong PINs: wait a minute */
+    return 'bad';
+  }
+
+  /* ---------- link to the phone remote ---------- */
+  var conns = [], status = 'Starting...', box = null;
+  var links = { room: { peer: null, t: 0, taken: 0 }, pin: { peer: null, t: 0, taken: 0 } };
   function paintStatus() {
     if (!box) return;
     box.textContent = conns.length ? '\u25CF ' + conns.length + ' remote' + (conns.length > 1 ? 's' : '') + ' connected' : status;
@@ -123,8 +153,16 @@
     conn.on('data', function (m) {
       if (!m || typeof m !== 'object') return;
       if (m.t === 'hello') {
-        if (conns.indexOf(conn) < 0) conns.push(conn);
-        conn.send({ t: 'welcome' }); say('\uD83D\uDCF1 Remote connected'); paintStatus();
+        var r = checkPin(String(m.pin || '').replace(/\D/g, ''));
+        if (r === 'ok') {
+          if (conns.indexOf(conn) < 0) conns.push(conn);
+          conn.send({ t: 'welcome' }); say('\uD83D\uDCF1 Remote connected'); paintStatus();
+          pairing = false; paintQr();
+        } else if (r === 'locked') {
+          conn.send({ t: 'locked', secs: Math.max(1, Math.ceil((lockUntil - Date.now()) / 1000)) }); showPairing();
+        } else {
+          conn.send({ t: 'need_pin', bad: r === 'bad' }); showPairing();   /* show the QR + PIN on the TV for a while, even if hidden */
+        }
       } else if (m.t === 'rpc' && conns.indexOf(conn) >= 0) {
         route(m.method, m.path, m.body).then(function (r) { conn.send({ t: 'res', id: m.id, status: r.status, data: r.data }); });
       }
@@ -132,55 +170,72 @@
     var gone = function () { var i = conns.indexOf(conn); if (i >= 0) conns.splice(i, 1); paintStatus(); };
     conn.on('close', gone); conn.on('error', gone);
   }
-  function restart(delay) {
-    clearTimeout(retryT);
-    try { if (peer) peer.destroy(); } catch (e) {}
-    peer = null;
-    retryT = setTimeout(startPeer, delay || 0);
-  }
-  function startPeer() {
-    if (!window.Peer) { status = 'Needs internet'; paintStatus(); return restart(8000); }
-    window.S1_ROOM().then(function (room) {
-      if (!room) { status = 'No internet - retrying...'; paintStatus(); return restart(8000); }
-      qrRoom = room; drawQr();
-      peer = new Peer(room, { debug: 0, config: window.S1_ICE() });
-      peer.on('open', function () { status = 'Waiting for the remote...'; paintStatus(); });
-      peer.on('connection', onConn);
-      peer.on('disconnected', function () { status = 'Reconnecting...'; paintStatus(); setTimeout(function () { try { peer.reconnect(); } catch (e) {} }, 2000); });
-      peer.on('error', function (err) {
+  /* one link = one address on the relay. 'room' = Wi-Fi / home name, 'pin' = the PIN address (works from anywhere) */
+  function startLink(name, idFn, primary) {
+    var L = links[name];
+    clearTimeout(L.t);
+    try { if (L.peer) L.peer.destroy(); } catch (e) {}
+    L.peer = null;
+    var retry = function (ms) { clearTimeout(L.t); L.t = setTimeout(function () { startLink(name, idFn, primary); }, ms || 0); };
+    if (!window.Peer) { if (primary) { status = 'Needs internet'; paintStatus(); } return retry(8000); }
+    idFn().then(function (id) {
+      if (!id) { if (!primary) return; status = 'No internet - retrying...'; paintStatus(); return retry(8000); }
+      if (primary) { qrRoom = id; drawQr(); }
+      var p = new Peer(id, { debug: 0, config: window.S1_ICE() });
+      L.peer = p;
+      p.on('open', function () { L.taken = 0; if (primary) { status = 'Waiting for the remote...'; paintStatus(); } });
+      p.on('connection', onConn);
+      p.on('disconnected', function () { if (primary) { status = 'Reconnecting...'; paintStatus(); } setTimeout(function () { try { p.reconnect(); } catch (e) {} }, 2000); });
+      p.on('error', function (err) {
         if (err && err.type === 'peer-unavailable') return;
         /* 'unavailable-id' = the relay still holds our previous session (quick refresh): just retry */
-        status = (err && err.type === 'unavailable-id') ? 'Reconnecting...' : 'Offline - retrying...'; paintStatus(); restart(5000);
+        var taken = !!(err && err.type === 'unavailable-id');
+        if (primary) { status = taken ? 'Reconnecting...' : 'Offline - retrying...'; paintStatus(); }
+        /* the PIN address is used by another TV for minutes on end (very unlikely): pick a new PIN */
+        if (!primary && taken && !fixedPin && ++L.taken >= 24) { L.taken = 0; pin = newPin(); drawQr(); }
+        retry(5000);
       });
     });
   }
+  function startPeer() {
+    startLink('room', function () { return window.S1_ROOM(); }, true);
+    startLink('pin', function () { return Promise.resolve(pin ? 's1iptv-pin-' + pin : ''); }, false);
+  }
 
-  /* ---------- QR code for the remote: scan it with the phone to open remote.html ---------- */
-  var qrBox = null, qrImg = null, qrRoom = '';
+  /* ---------- QR code for the remote: scan it with the phone to open remote.html (the PIN rides along) ---------- */
+  var qrBox = null, qrImg = null, qrPinEl = null, qrRoom = '', pairing = false, pairT = 0;
   function buildQr() {
     qrBox = document.createElement('div'); qrBox.id = 's1qr';
     qrBox.style.cssText = 'position:fixed;right:10px;bottom:44px;z-index:45;background:#fff;color:#111;' +
-      'border-radius:10px;padding:6px 6px 5px;width:110px;text-align:center;font:700 9px Arial,sans-serif;' +
+      'border-radius:10px;padding:6px 6px 6px;width:118px;text-align:center;font:700 9px Arial,sans-serif;' +
       'box-shadow:0 3px 12px #0008;display:none;pointer-events:none;opacity:.92';
-    qrBox.innerHTML = '<div style="margin-bottom:4px">Scan for remote</div><div id="s1qrimg" style="width:98px;height:98px;margin:0 auto"></div>';
-    qrImg = qrBox.querySelector('#s1qrimg');
+    qrBox.innerHTML = '<div style="margin-bottom:4px">Scan for remote</div><div id="s1qrimg" style="width:104px;height:104px;margin:0 auto"></div>' +
+      '<div id="s1qrpin" style="font:700 12px Arial,sans-serif;letter-spacing:.12em;margin-top:5px"></div>';
+    qrImg = qrBox.querySelector('#s1qrimg'); qrPinEl = qrBox.querySelector('#s1qrpin');
     document.body.appendChild(qrBox);
     drawQr();
   }
-  /* The QR holds the remote address PLUS this TV's room name (?r=...), so the phone joins the right room
-     even when its own internet address looks different (iCloud Private Relay, VPN, IPv6, mobile data). */
+  /* The QR holds the remote address plus the PIN after the # (a # part is never sent to any server).
+     Without a PIN it carries the room name instead (?r=...). */
   function drawQr() {
     if (!qrImg) return;
     var url = remoteUrl();
-    if (qrRoom) url += '?r=' + encodeURIComponent(qrRoom.replace(/^s1iptv-/, ''));
+    if (pin) url += '#p=' + pin; else if (qrRoom) url += '?r=' + encodeURIComponent(qrRoom.replace(/^s1iptv-/, ''));
     var svg = '';
     try { var q = qrcode(0, 'L'); q.addData(url); q.make(); svg = q.createSvgTag({ cellSize: 4, margin: 4, scalable: true }); } catch (e) {}
     qrImg.innerHTML = svg;
     var el = qrImg.querySelector('svg'); if (el) { el.style.width = '100%'; el.style.height = '100%'; el.style.display = 'block'; }
+    if (qrPinEl) qrPinEl.textContent = pin ? 'PIN ' + pinText() : '';
+  }
+  /* a phone is asking for the PIN: show the QR + PIN on the TV for a minute and a half, even if it was hidden */
+  function showPairing() {
+    if (!pin) return;
+    pairing = true; paintQr();
+    clearTimeout(pairT); pairT = setTimeout(function () { pairing = false; paintQr(); }, 90000);
   }
   function paintQr() {
     if (!qrBox) return;
-    qrBox.style.display = state.qr ? 'block' : 'none';
+    qrBox.style.display = (state.qr || pairing) ? 'block' : 'none';
   }
 
   /* ---------- tiny status text + auto fullscreen/unmute on first touch ---------- */
@@ -205,6 +260,7 @@
     };
     document.addEventListener('pointerdown', go, true); document.addEventListener('keydown', go, true); document.addEventListener('touchstart', go, true);
     startPeer();
+    try { if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js'); } catch (e) {}   /* lets the TV page be installed as an app */
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', ready); else ready();
 })();

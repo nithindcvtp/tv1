@@ -6,7 +6,14 @@
   var realFetch = window.fetch.bind(window);
   function store(k, v) { try { if (v === undefined) return localStorage.getItem(k); if (v === null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (e) {} return null; }
 
-  var room = '';
+  /* The TV's QR link carries the PIN after the # (remote.html#p=123456): remember it and tidy the address bar. */
+  try {
+    var hm = String(location.hash || '').match(/[#&]p=(\d{4,8})/);
+    if (hm) { store('s1_pin', hm[1]); history.replaceState(null, '', location.pathname + location.search); }
+  } catch (e) {}
+  try { if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js'); } catch (e) {}   /* lets the remote be installed as an app */
+
+  var room = '', ovKind = '';
 
   var peer = null, conn = null, connected = false, waiters = [], pending = {}, seq = 0, attempt = 0, timer = 0, retryT = 0;
   var cands = [], ci = 0, keepRoom = false, fails = 0;
@@ -34,17 +41,39 @@
     bar.querySelector('#s1bx').onclick = function () { bar.style.display = 'none'; };
     ov = document.createElement('div'); ov.id = 's1ov'; document.body.appendChild(ov);
   }
-  function overlay(html) { ov.innerHTML = '<div class="card">' + html + '</div>'; ov.style.display = 'flex'; }
-  function hideOverlay() { ov.style.display = 'none'; }
+  function overlay(html, kind) { ov.innerHTML = '<div class="card">' + html + '</div>'; ov.style.display = 'flex'; ovKind = kind || ''; }
+  function hideOverlay() { ov.style.display = 'none'; ovKind = ''; }
 
   function showConnecting() {
-    overlay('<div class="ico">\uD83D\uDCF6</div><h2>Connecting to the TV\u2026</h2><p>Make sure the TV page is open.</p>');
+    overlay('<div class="ico">\uD83D\uDCF6</div><h2>Connecting to the TV\u2026</h2><p>Make sure the TV page is open.</p>', 'conn');
+  }
+  var PIN_INPUT = '<input id="s1pn" type="tel" inputmode="numeric" pattern="[0-9]*" maxlength="8" placeholder="PIN" autocomplete="off">';
+  /* typing the PIN: save it and start looking again (the PIN is also the TV's address, so it finds the TV from anywhere) */
+  function wirePin() {
+    var inp = ov.querySelector('#s1pn'), btn = ov.querySelector('#s1pb');
+    var go = function () {
+      var v = String(inp.value || '').replace(/\D/g, '');
+      if (v.length < 4) { inp.focus(); return; }
+      store('s1_pin', v); attempt = 0; showConnecting(); connect();
+    };
+    btn.onclick = go;
+    inp.onkeydown = function (e) { if (e.key === 'Enter') go(); };
   }
   function showNoTv(why) {
+    if (ovKind === 'notv' && ov.style.display === 'flex') return;   /* already showing: don't wipe what is being typed */
     overlay('<div class="ico">\uD83D\uDCFA</div><h2>Can\u2019t find the TV</h2>' +
-      '<p>' + (why === 'noip' ? 'No internet connection.' : 'Open the TV page on the TV / computer and make sure it is online. If the TV\u2019s network changed, scan the QR code on the TV again.') + '</p>' +
-      '<p>Trying again automatically\u2026</p><button id="s1re">TRY NOW</button>');
+      '<p>' + (why === 'noip' ? 'No internet connection.' : 'Open the TV page on the TV / computer and make sure it is online.') + ' Trying again automatically\u2026</p>' +
+      '<p>Or type the PIN shown on the TV:</p>' + PIN_INPUT +
+      '<button id="s1pb">CONNECT WITH PIN</button><button class="alt" id="s1re">TRY NOW</button>', 'notv');
     ov.querySelector('#s1re').onclick = function () { attempt = 0; connect(); };
+    wirePin();
+  }
+  function showPin(bad, lockedSecs) {
+    var msg = lockedSecs ? 'Too many wrong tries. Wait ' + lockedSecs + ' seconds, then try again.' :
+      bad ? 'That PIN is not right (it may have been changed on the TV). Try again.' : 'Type the PIN shown on the TV screen.';
+    overlay('<div class="ico">\uD83D\uDD12</div><h2>Enter PIN</h2><p>' + msg + '</p>' + PIN_INPUT + '<button id="s1pb">UNLOCK</button>', 'pin');
+    wirePin();
+    var i = ov.querySelector('#s1pn'); if (i) try { i.focus(); } catch (e) {}
   }
   function setBar(t) { if (barTxt) barTxt.textContent = t; }
 
@@ -89,7 +118,7 @@
       room = r; keepRoom = !!c.keep;
       var cn = peer.connect(room, { reliable: true, serialization: 'json' });
       conn = cn;
-      cn.on('open', function () { cn.send({ t: 'hello' }); });
+      cn.on('open', function () { cn.send({ t: 'hello', pin: store('s1_pin') || '' }); });
       cn.on('data', onData);
       cn.on('close', function () { if (connected && cn === conn) { setConnected(false); showConnecting(); setTimeout(function () { if (!connected && myAttempt === attempt) connect(); }, 1500); } });
       cn.on('error', function () {});
@@ -97,6 +126,12 @@
   }
   function onData(m) {
     if (!m || typeof m !== 'object') return;
+    if (m.t === 'need_pin' || m.t === 'locked') {
+      clearTimeout(timer); clearTimeout(retryT);          /* stop retrying: wait for the person to type the PIN */
+      if (m.t === 'need_pin' && m.bad) store('s1_pin', null);
+      showPin(m.t === 'need_pin' && !!m.bad, m.t === 'locked' ? m.secs : 0);
+      return;
+    }
     if (m.t === 'welcome') {
       clearTimeout(timer); hideOverlay(); setConnected(true);
       if (keepRoom && room) store('s1_room', room.replace(/^s1iptv-/, ''));   /* remember this TV: next time it works from anywhere */

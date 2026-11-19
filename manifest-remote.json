@@ -1,0 +1,16 @@
+{
+  "id": "./?s1=remote",
+  "name": "S1 Remote",
+  "short_name": "S1 Remote",
+  "description": "Phone remote for S1 TV",
+  "start_url": "./remote.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0a0d14",
+  "theme_color": "#0a0d14",
+  "icons": [
+    { "src": "icon-remote-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "icon-remote-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}
