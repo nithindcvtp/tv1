@@ -11,7 +11,9 @@
 
   /* ---------- channel state (what iptv_host.py kept on the PC) ---------- */
   var state = { id: 0, name: '', url: '', index: 0, volume: 70, muted: false };
-  state.qr = store('s1_qr') !== '0';   /* QR code for the remote: shown by default, hide/show from the phone remote */
+  /* QR code for the remote: always shown when the TV page opens. The phone's HIDE QR button hides it for this
+     session only (it used to be remembered forever, which made the QR look "missing" after a reload/update). */
+  state.qr = true; store('s1_qr', null);
   var CHANNELS = [];
   var notice = { msg: '', at: 0, n: 0 };
   function say(msg) { notice.msg = msg; notice.at = Date.now() / 1000; notice.n++; }
@@ -58,7 +60,7 @@
       case 'mute': state.muted = !state.muted; break;
       case 'qr':   /* value: 'show' | 'hide' | anything else = toggle */
         state.qr = value === 'show' ? true : value === 'hide' ? false : !state.qr;
-        store('s1_qr', state.qr ? '1' : '0'); paintQr(); break;
+        paintQr(); break;
       case 'set_default':
         n = parseInt(value, 10); if (isNaN(n) || n < 1 || n > CHANNELS.length) return null;
         var c = CHANNELS[n - 1];
@@ -72,7 +74,13 @@
     return snapshot();
   }
 
-  function remoteUrl() { var u = new URL('remote.html', location.href); u.search = ''; u.hash = ''; return u.href; }
+  /* Absolute address of remote.html, always next to this page (works on github.io/<repo>/, with or without index.html,
+     when opened without the trailing slash, and from a custom domain). */
+  function remoteUrl() {
+    var path = location.pathname.replace(/[^\/]*$/, '');          /* drop 'index.html' or anything after the last / */
+    if (path.charAt(path.length - 1) !== '/') path += '/';
+    return location.origin + path + 'remote.html';
+  }
 
   /* ---------- API router: same endpoints iptv_host.py had, answered locally ---------- */
   function route(method, url, body) {
@@ -223,6 +231,7 @@
     if (pin) url += '#p=' + pin; else if (qrRoom) url += '?r=' + encodeURIComponent(qrRoom.replace(/^s1iptv-/, ''));
     var svg = '';
     try { var q = qrcode(0, 'L'); q.addData(url); q.make(); svg = q.createSvgTag({ cellSize: 4, margin: 4, scalable: true }); } catch (e) {}
+    if (!svg) { try { console.error('S1 QR: could not draw the code for', url); } catch (e) {} svg = '<div style="font:700 10px Arial;word-break:break-all;color:#111;padding:4px">' + url.replace(/</g, '') + '</div>'; }
     qrImg.innerHTML = svg;
     var el = qrImg.querySelector('svg'); if (el) { el.style.width = '100%'; el.style.height = '100%'; el.style.display = 'block'; }
     if (qrPinEl) qrPinEl.textContent = pin ? 'PIN ' + pinText() : '';
