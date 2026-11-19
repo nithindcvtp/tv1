@@ -159,14 +159,13 @@
   function buildQr() {
     var url = remoteUrl();
     qrBox = document.createElement('div'); qrBox.id = 's1qr';
-    qrBox.style.cssText = 'position:fixed;right:18px;top:50%;transform:translateY(-50%);z-index:45;background:#fff;color:#111;' +
-      'border-radius:16px;padding:12px 12px 10px;width:176px;text-align:center;font:700 13px Arial,sans-serif;' +
-      'box-shadow:0 8px 30px #000a;display:none;pointer-events:none';
+    qrBox.style.cssText = 'position:fixed;right:10px;bottom:44px;z-index:45;background:#fff;color:#111;' +
+      'border-radius:10px;padding:6px 6px 5px;width:92px;text-align:center;font:700 9px Arial,sans-serif;' +
+      'box-shadow:0 3px 12px #0008;display:none;pointer-events:none;opacity:.92';
     var svg = '';
-    try { var q = qrcode(0, 'M'); q.addData(url); q.make(); svg = q.createSvgTag({ cellSize: 4, margin: 8, scalable: true }); } catch (e) {}
-    qrBox.innerHTML = '<div style="font-size:14px;margin-bottom:8px">\uD83D\uDCF1 Scan for remote</div>' +
-      '<div id="s1qrimg" style="width:150px;height:150px;margin:0 auto">' + svg + '</div>' +
-      '<div style="font:600 10px Arial,sans-serif;color:#555;margin-top:8px;word-break:break-all;line-height:1.3">' + url.replace(/^https?:\/\//, '') + '</div>';
+    try { var q = qrcode(0, 'M'); q.addData(url); q.make(); svg = q.createSvgTag({ cellSize: 4, margin: 4, scalable: true }); } catch (e) {}
+    qrBox.innerHTML = '<div style="margin-bottom:4px">Scan for remote</div>' +
+      '<div id="s1qrimg" style="width:80px;height:80px;margin:0 auto">' + svg + '</div>';
     var el = qrBox.querySelector('svg'); if (el) { el.style.width = '100%'; el.style.height = '100%'; el.style.display = 'block'; }
     document.body.appendChild(qrBox);
   }
