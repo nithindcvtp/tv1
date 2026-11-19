@@ -1,8 +1,8 @@
 /* S1 IPTV - web edition, TV side.
    The TV page is its own "host": it keeps the channel state, answers the phone remote's commands
    and answers the phone remote's commands. The phone talks to it over a direct peer link (PeerJS).
-   There is no QR code and no code to type: both pages automatically meet in the same "room"
-   (see config.js), so just open the TV page and the remote page and they connect. */
+   The TV page shows a QR code (hide/show it from the remote) that opens the remote page; both pages
+   automatically meet in the same "room" (see config.js), so there is no code to type. */
 (function () {
   'use strict';
   var realFetch = window.fetch.bind(window);
@@ -11,6 +11,7 @@
 
   /* ---------- channel state (what iptv_host.py kept on the PC) ---------- */
   var state = { id: 0, name: '', url: '', index: 0, volume: 70, muted: false };
+  state.qr = store('s1_qr') !== '0';   /* QR code for the remote: shown by default, hide/show from the phone remote */
   var CHANNELS = [];
   var notice = { msg: '', at: 0, n: 0 };
   function say(msg) { notice.msg = msg; notice.at = Date.now() / 1000; notice.n++; }
@@ -55,6 +56,9 @@
       case 'vol_down': state.volume = Math.max(0, state.volume - 5); break;
       case 'vol': n = parseInt(value, 10); if (isNaN(n)) return null; state.volume = Math.max(0, Math.min(100, n)); break;
       case 'mute': state.muted = !state.muted; break;
+      case 'qr':   /* value: 'show' | 'hide' | anything else = toggle */
+        state.qr = value === 'show' ? true : value === 'hide' ? false : !state.qr;
+        store('s1_qr', state.qr ? '1' : '0'); paintQr(); break;
       case 'set_default':
         n = parseInt(value, 10); if (isNaN(n) || n < 1 || n > CHANNELS.length) return null;
         var c = CHANNELS[n - 1];
@@ -150,11 +154,33 @@
     });
   }
 
+  /* ---------- QR code for the remote: scan it with the phone to open remote.html ---------- */
+  var qrBox = null, qrDrawn = '';
+  function buildQr() {
+    var url = remoteUrl();
+    qrBox = document.createElement('div'); qrBox.id = 's1qr';
+    qrBox.style.cssText = 'position:fixed;right:18px;top:50%;transform:translateY(-50%);z-index:45;background:#fff;color:#111;' +
+      'border-radius:16px;padding:12px 12px 10px;width:176px;text-align:center;font:700 13px Arial,sans-serif;' +
+      'box-shadow:0 8px 30px #000a;display:none;pointer-events:none';
+    var svg = '';
+    try { var q = qrcode(0, 'M'); q.addData(url); q.make(); svg = q.createSvgTag({ cellSize: 4, margin: 8, scalable: true }); } catch (e) {}
+    qrBox.innerHTML = '<div style="font-size:14px;margin-bottom:8px">\uD83D\uDCF1 Scan for remote</div>' +
+      '<div id="s1qrimg" style="width:150px;height:150px;margin:0 auto">' + svg + '</div>' +
+      '<div style="font:600 10px Arial,sans-serif;color:#555;margin-top:8px;word-break:break-all;line-height:1.3">' + url.replace(/^https?:\/\//, '') + '</div>';
+    var el = qrBox.querySelector('svg'); if (el) { el.style.width = '100%'; el.style.height = '100%'; el.style.display = 'block'; }
+    document.body.appendChild(qrBox);
+  }
+  function paintQr() {
+    if (!qrBox) return;
+    qrBox.style.display = state.qr ? 'block' : 'none';
+  }
+
   /* ---------- tiny status text + auto fullscreen/unmute on first touch ---------- */
   function ready() {
     box = document.createElement('div'); box.id = 's1status';
     box.style.cssText = 'position:fixed;right:14px;bottom:12px;z-index:50;color:#fff;background:#0007;font:600 12px Arial;padding:5px 10px;border-radius:12px;opacity:.55;pointer-events:none';
     document.body.appendChild(box); paintStatus();
+    buildQr(); paintQr();
     document.addEventListener('mousemove', function () { box.style.opacity = '.9'; clearTimeout(box._t); box._t = setTimeout(function () { box.style.opacity = '.55'; }, 2500); });
 
     /* no blocking "click to start" screen: the TV starts by itself (muted if the browser demands it).
