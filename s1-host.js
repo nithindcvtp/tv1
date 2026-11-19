@@ -143,7 +143,7 @@
     window.S1_ROOM().then(function (room) {
       if (!room) { status = 'No internet - retrying...'; paintStatus(); return restart(8000); }
       qrRoom = room; drawQr();
-      peer = new Peer(room, { debug: 0 });
+      peer = new Peer(room, { debug: 0, config: window.S1_ICE() });
       peer.on('open', function () { status = 'Waiting for the remote...'; paintStatus(); });
       peer.on('connection', onConn);
       peer.on('disconnected', function () { status = 'Reconnecting...'; paintStatus(); setTimeout(function () { try { peer.reconnect(); } catch (e) {} }, 2000); });
