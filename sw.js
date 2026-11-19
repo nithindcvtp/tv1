@@ -1,7 +1,7 @@
 /* S1 TV service worker: lets the TV page and the remote be installed as apps and open quickly.
    It always asks the internet first, so a file you update on GitHub shows up straight away; the saved copy
    is only used when the internet is not available. It never touches streams or other websites. */
-var CACHE = 's1-shell-v1';
+var CACHE = 's1-shell-v2';
 var FILES = ['./', 'index.html', 'remote.html', 'config.js', 's1-host.js', 's1-remote.js', 'qrcode.js', 'channels_ml.json',
   'manifest-tv.json', 'manifest-remote.json', 'icon-tv-192.png', 'icon-tv-512.png', 'icon-remote-192.png', 'icon-remote-512.png'];
 
