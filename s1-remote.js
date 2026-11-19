@@ -9,6 +9,7 @@
   var room = '';
 
   var peer = null, conn = null, connected = false, waiters = [], pending = {}, seq = 0, attempt = 0, timer = 0, retryT = 0;
+  var cands = [], ci = 0, keepRoom = false, fails = 0;
 
   /* ---------- UI: status + messages ---------- */
   var css = document.createElement('style');
@@ -41,7 +42,7 @@
   }
   function showNoTv(why) {
     overlay('<div class="ico">\uD83D\uDCFA</div><h2>Can\u2019t find the TV</h2>' +
-      '<p>' + (why === 'noip' ? 'No internet connection.' : 'Open the TV page on the TV / computer, and keep this phone on the same Wi\u2011Fi.') + '</p>' +
+      '<p>' + (why === 'noip' ? 'No internet connection.' : 'Open the TV page on the TV / computer and make sure it is online. If the TV\u2019s network changed, scan the QR code on the TV again.') + '</p>' +
       '<p>Trying again automatically\u2026</p><button id="s1re">TRY NOW</button>');
     ov.querySelector('#s1re').onclick = function () { attempt = 0; connect(); };
   }
@@ -66,34 +67,44 @@
     try { if (peer) peer.destroy(); } catch (e) {}
     if (!window.Peer) { overlay('<div class="ico">\u26A0\uFE0F</div><h2>Needs internet</h2><p>The link library could not be loaded.</p><button onclick="location.reload()">RELOAD</button>'); return; }
     var myAttempt = ++attempt;
-    window.S1_ROOM().then(function (r) {
+    cands = window.S1_ROOM_CANDIDATES(); ci = 0; fails = 0;
+    /* generous: a connection that has to go round through the internet relay takes a few seconds longer */
+    timer = setTimeout(function () { if (!connected && myAttempt === attempt) fail('notv'); }, 25000);
+    peer = new Peer({ debug: 0, config: window.S1_ICE() });
+    peer.on('open', function () { dial(myAttempt); });
+    peer.on('error', function (err) {
       if (myAttempt !== attempt) return;
-      if (!r) return fail('noip');
-      room = r;
-      peer = new Peer({ debug: 0 });
-      timer = setTimeout(function () { if (!connected) fail('notv'); }, 12000);
-      peer.on('open', function () {
-        conn = peer.connect(room, { reliable: true, serialization: 'json' });
-        conn.on('open', function () { conn.send({ t: 'hello' }); });
-        conn.on('data', onData);
-        conn.on('close', function () { if (connected) { setConnected(false); showConnecting(); setTimeout(function () { if (!connected && myAttempt === attempt) connect(); }, 1500); } });
-        conn.on('error', function () {});
-      });
-      peer.on('error', function (err) {
-        if (err && err.type === 'peer-unavailable') return fail('notv');
-        if (!connected) fail('notv');
-      });
-      peer.on('disconnected', function () { try { peer.reconnect(); } catch (e) {} });
+      if (err && err.type === 'peer-unavailable') { ci++; return dial(myAttempt); }   /* no TV in that room: try the next one */
+      if (!connected) fail('notv');
+    });
+    peer.on('disconnected', function () { try { peer.reconnect(); } catch (e) {} });
+  }
+  function dial(myAttempt) {
+    if (myAttempt !== attempt || connected) return;
+    var c = cands[ci];
+    if (!c) return fail('notv');
+    c.get().then(function (r) {
+      if (myAttempt !== attempt || connected) return;
+      if (!r) { ci++; return cands[ci] ? dial(myAttempt) : fail('noip'); }
+      room = r; keepRoom = !!c.keep;
+      var cn = peer.connect(room, { reliable: true, serialization: 'json' });
+      conn = cn;
+      cn.on('open', function () { cn.send({ t: 'hello' }); });
+      cn.on('data', onData);
+      cn.on('close', function () { if (connected && cn === conn) { setConnected(false); showConnecting(); setTimeout(function () { if (!connected && myAttempt === attempt) connect(); }, 1500); } });
+      cn.on('error', function () {});
     });
   }
   function onData(m) {
     if (!m || typeof m !== 'object') return;
     if (m.t === 'welcome') {
       clearTimeout(timer); hideOverlay(); setConnected(true);
+      if (keepRoom && room) store('s1_room', room.replace(/^s1iptv-/, ''));   /* remember this TV: next time it works from anywhere */
       if (typeof window.loadChannels === 'function') window.loadChannels();
       if (typeof window.poll === 'function') window.poll();
       return;
     }
+    if (m.t === 'res') fails = 0;
     if (m.t === 'res' && pending[m.id]) { var p = pending[m.id]; delete pending[m.id]; clearTimeout(p.t); p.ok(m); }
   }
 
@@ -101,7 +112,7 @@
   function rpc(method, path, body) {
     return new Promise(function (resolve, reject) {
       var send = function () {
-        var id = ++seq, t = setTimeout(function () { delete pending[id]; reject(new Error('timeout')); }, 6000);
+        var id = ++seq, t = setTimeout(function () { delete pending[id]; reject(new Error('timeout')); if (connected && ++fails >= 2) { fails = 0; setConnected(false); showConnecting(); connect(); } }, 6000);
         pending[id] = { t: t, ok: resolve };
         try { conn.send({ t: 'rpc', id: id, method: method, path: path, body: body }); } catch (e) { clearTimeout(t); delete pending[id]; reject(e); }
       };
