@@ -142,6 +142,7 @@
     if (!window.Peer) { status = 'Needs internet'; paintStatus(); return restart(8000); }
     window.S1_ROOM().then(function (room) {
       if (!room) { status = 'No internet - retrying...'; paintStatus(); return restart(8000); }
+      qrRoom = room; drawQr();
       peer = new Peer(room, { debug: 0 });
       peer.on('open', function () { status = 'Waiting for the remote...'; paintStatus(); });
       peer.on('connection', onConn);
@@ -155,19 +156,27 @@
   }
 
   /* ---------- QR code for the remote: scan it with the phone to open remote.html ---------- */
-  var qrBox = null, qrDrawn = '';
+  var qrBox = null, qrImg = null, qrRoom = '';
   function buildQr() {
-    var url = remoteUrl();
     qrBox = document.createElement('div'); qrBox.id = 's1qr';
     qrBox.style.cssText = 'position:fixed;right:10px;bottom:44px;z-index:45;background:#fff;color:#111;' +
-      'border-radius:10px;padding:6px 6px 5px;width:92px;text-align:center;font:700 9px Arial,sans-serif;' +
+      'border-radius:10px;padding:6px 6px 5px;width:110px;text-align:center;font:700 9px Arial,sans-serif;' +
       'box-shadow:0 3px 12px #0008;display:none;pointer-events:none;opacity:.92';
-    var svg = '';
-    try { var q = qrcode(0, 'M'); q.addData(url); q.make(); svg = q.createSvgTag({ cellSize: 4, margin: 4, scalable: true }); } catch (e) {}
-    qrBox.innerHTML = '<div style="margin-bottom:4px">Scan for remote</div>' +
-      '<div id="s1qrimg" style="width:80px;height:80px;margin:0 auto">' + svg + '</div>';
-    var el = qrBox.querySelector('svg'); if (el) { el.style.width = '100%'; el.style.height = '100%'; el.style.display = 'block'; }
+    qrBox.innerHTML = '<div style="margin-bottom:4px">Scan for remote</div><div id="s1qrimg" style="width:98px;height:98px;margin:0 auto"></div>';
+    qrImg = qrBox.querySelector('#s1qrimg');
     document.body.appendChild(qrBox);
+    drawQr();
+  }
+  /* The QR holds the remote address PLUS this TV's room name (?r=...), so the phone joins the right room
+     even when its own internet address looks different (iCloud Private Relay, VPN, IPv6, mobile data). */
+  function drawQr() {
+    if (!qrImg) return;
+    var url = remoteUrl();
+    if (qrRoom) url += '?r=' + encodeURIComponent(qrRoom.replace(/^s1iptv-/, ''));
+    var svg = '';
+    try { var q = qrcode(0, 'L'); q.addData(url); q.make(); svg = q.createSvgTag({ cellSize: 4, margin: 4, scalable: true }); } catch (e) {}
+    qrImg.innerHTML = svg;
+    var el = qrImg.querySelector('svg'); if (el) { el.style.width = '100%'; el.style.height = '100%'; el.style.display = 'block'; }
   }
   function paintQr() {
     if (!qrBox) return;
