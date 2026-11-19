@@ -127,6 +127,10 @@ button{font:inherit;color:inherit;border:0;cursor:pointer;touch-action:manipulat
 #pv video{flex:1;min-height:0;width:100%;background:#000}
 #pv .pvbar{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;padding-top:max(10px,env(safe-area-inset-top));background:#10131c;font-size:13px;color:var(--mut)}
 #pv .pvbar button{height:36px;padding:0 16px;border-radius:18px;background:var(--btn);border:1px solid #3a4360;font-weight:800;font-size:12px}
+.qrtop{display:flex;align-items:center;gap:5px;height:28px;padding:0 10px;border-radius:14px;background:var(--btn);border:1px solid #3a4360;color:var(--txt);font:800 10px system-ui,"Segoe UI",Arial,sans-serif;letter-spacing:.08em}
+.qrtop svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.qrtop.on{background:#17314a;border-color:#2f6fa6;color:#bfe0ff}
+.qrtop:active{background:var(--btn2)}
 /* web edition: features that need the PC host are not available */
 .sys,.tools,.panel,#joy,#pv{display:none!important}
 .mid{grid-template-columns:1fr 1fr}
@@ -135,7 +139,7 @@ button{font:inherit;color:inherit;border:0;cursor:pointer;touch-action:manipulat
 <body>
 <div class="wrap">
   <div class="remote">
-    <div class="top"><div class="led" id="led"></div><div>S1 REMOTE</div><div style="width:10px"></div></div>
+    <div class="top"><div class="led" id="led"></div><div>S1 REMOTE</div><button class="qrtop on" id="qrbtn" title="Show / hide the QR code on the TV screen"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3h-3zM20 14v.01M14 20v.01M17 20h4v-3"/></svg><span id="qrtxt">HIDE QR</span></button></div>
 
     <div class="lcd">
       <div class="row"><div id="ch">CH --</div><div id="mute">MUTE</div></div>
@@ -182,8 +186,8 @@ button{font:inherit;color:inherit;border:0;cursor:pointer;touch-action:manipulat
       <button class="tool" id="ytbtn" aria-expanded="false">
         <svg viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="4.5"/><path d="M10 9l5 3-5 3z"/></svg>YOUTUBE
       </button>
-      <button class="tool on" id="qrbtn" title="Show / hide the QR code on the TV screen">
-        <svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="M14 14h3v3h-3zM20 14v.01M14 20v.01M17 20h4v-3"/></svg><span id="qrtxt">HIDE QR</span>
+      <button class="tool" id="spare1" disabled>
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>SOON
       </button>
       <button class="tool" id="spare2" disabled>
         <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>SOON
